@@ -164,7 +164,7 @@ contains
         if (npts > 1) then
             do i = 1, npts
                 call pts%get_v_rates(i, rates_tot)
-                tot_rate = tot_rate + rates_tot(1) ! TODO update for more than one stage
+                tot_rate = tot_rate + rates_tot(1) !TODO update for more than one stage
             end do
             Vp = tot_rate * times(1)            
         else
