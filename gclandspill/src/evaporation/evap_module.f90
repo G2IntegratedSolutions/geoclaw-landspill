@@ -1,8 +1,8 @@
 !
 ! evap_module.f90
-! Contributors: Pi-Yueh Chuang <pychuang@gwu.edu>
+! Copyright (C) 2018 Pi-Yueh Chuang <pychuang@gwu.edu>
 !
-! Distributed under terms of the BSD 3-Clause license.
+! Distributed under terms of the MIT license.
 !
 
 !> @brief The top-level evaporation module.
@@ -134,7 +134,9 @@ contains
         integer(kind=4):: nt ! number of stages in release profile
         real(kind=8):: Vp ! remained volume in pipeline
         real(kind=8):: dt, T, V0
-        real(kind=8), allocatable, dimension(:):: rates, times
+        real(kind=8), allocatable, dimension(:):: rates, times, rates_tot
+        ! total rate if npts > 1
+        real(kind=8):: tot_rate
 
         if (this%type == 0) return
 
@@ -143,20 +145,33 @@ contains
         else
             dt = 1D-3
         end if
-
+        print *, "Test Evaporation model."
+        
+        ! if (npts > 1) then
+        !     print *, "ERROR: Evaporation model currently does not support &
+        !         multiple point sources."
+        !     stop
+        ! end if
         npts = pts%get_n_points()
-        if (npts > 1) then
-            print *, "ERROR: Evaporation model currently does not support &
-                multiple point sources."
-            stop
-        end if
-
-        nt = pts%get_n_stages(1) ! number of stages of 1st point
-        allocate(times(nt), rates(nt))
+        nt = pts%get_n_stages(1) ! number of stages of 1st point       
+        tot_rate = 0D0       
+       
+        allocate(times(nt), rates(nt), rates_tot(nt))
         call pts%get_times(1, times)
         call pts%get_v_rates(1, rates)
+        
+        ! Vp = rates(1) * times(1)
+        if (npts > 1) then
+            do i = 1, npts
+                call pts%get_v_rates(i, rates_tot)
+                tot_rate = tot_rate + rates_tot(1) ! TODO update for more than one stage
+            end do
+            Vp = tot_rate * times(1)            
+        else
+            Vp = rates(1) * times(1)
+        end if      
 
-        Vp = rates(1) * times(1)
+       
         do i = 2, nt
             Vp = Vp + rates(i) * (times(i) - times(i-1))
         end do
@@ -165,17 +180,27 @@ contains
         ! find the time that no fuild remained in pipeline
         do while (Vp > 0D0)
             i = count(times < T) + 1 ! current stage
-            Vp = Vp - rates(i) * dt ! minus the amount release to the field
+            if (npts > 1) then
+                Vp = Vp - tot_rate * dt ! TODO update for more than one stage
+            else
+                Vp = Vp - rates(i) * dt ! minus the amount release to the field
+            end if            
             Vp = Vp * this%remained_percentage(T, dt)
             T = T + dt
         end do
-
+       
         i = count(times < T) + 1
         times(i) = T
         rates(i+1:) = 0D0
 
         call pts%set_times(1, times)
         call pts%set_v_rates(1, rates)
+        ! TODO check for multiple points
+        if (npts > 1) then
+            do i = 1, npts
+                call pts%set_v_rates(i, rates)
+            end do
+        end if 
 
         ! now Vp is the initial volume in the pipe AFTER modifying times
         Vp = rates(1) * times(1)
